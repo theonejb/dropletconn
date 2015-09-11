@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"github.com/parnurzeal/gorequest"
+	"github.com/ryanuber/go-filecache"
 	"io/ioutil"
 	"net/http"
 	"os"
+	"time"
 )
 
 type InterfaceInfo struct {
@@ -29,9 +31,28 @@ type ApiResponseDroplets struct {
 	Droplets []DropletInfo `json:"droplets"`
 }
 
+type interfaceAddresses struct {
+	publicIps  []string
+	privateIps []string
+}
+
+func (di *DropletInfo) getInterfaceAddresses() interfaceAddresses {
+	var ia interfaceAddresses
+
+	for _, interfaceInfo := range di.Networks.V4 {
+		if interfaceInfo.Type == "public" {
+			ia.publicIps = append(ia.publicIps, interfaceInfo.IpAddress)
+		} else if interfaceInfo.Type == "private" {
+			ia.privateIps = append(ia.privateIps, interfaceInfo.IpAddress)
+		}
+	}
+
+	return ia
+}
+
 func getDroplets(authToken string) *ApiResponseDroplets {
 	req := gorequest.New()
-	resp, body, errs := req.Get("https://api.digitalocean.com/v2/droplets").
+	resp, body, errs := req.Get("https://api.digitalocean.com/v2/droplets?page=1&per_page=100").
 		Set("Content-Type", "application/json").
 		Set("Authorization", fmt.Sprintf("Bearer %s", authToken)).
 		EndBytes()
@@ -108,4 +129,22 @@ func readDropletsInfoCacheFile(fh *os.File) *ApiResponseDroplets {
 	}
 
 	return apiResponse
+}
+
+func getDropletsFromApi() ([]DropletInfo, error) {
+	cache_file_name, err := getDropletsCacheFileName()
+	if err != nil {
+		fmt.Printf("Unable to get cache file name. Error: %s\n", err.Error())
+		return nil, err
+	}
+
+	fc := filecache.New(cache_file_name, 5*time.Minute, updateDropletsInfoCacheFile)
+	fh, err := fc.Get()
+	if err != nil {
+		fmt.Printf("Unable to read cache file. Error: %s\n", err.Error())
+		return nil, err
+	}
+
+	dropletsInfo := readDropletsInfoCacheFile(fh)
+	return dropletsInfo.Droplets, nil
 }
