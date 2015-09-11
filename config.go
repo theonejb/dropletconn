@@ -17,63 +17,121 @@ type Config struct {
 	Token         string `json:"token"`
 	CacheFileName string `json:"cache_file_name"`
 	CacheDuration int    `json:"cache_duration"`
+
+	DefaultUser        string `json:"default_user"`
+	DefaultKeyFileName string `json:"default_key_file_name"`
 }
 
 const CONFIG_FILE_NAME = ".dropletconn.conf"
+
 const DEFAULT_CACHE_FILE_NAME = ".dropletconn.cache"
 const DEFAULT_CACHE_DURATION = 60
+const DEFAULT_USER = ""
+const DEFAULT_KEY_FILE_NAME = ""
 
 var config *Config
 
-func createConfig() error {
+func getConfig() (*Config, error) {
+	if config != nil {
+		return config, nil
+	}
+
+	config = new(Config)
+
+	configFile, err := getConfigFh()
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		configFile.Close()
+	}()
+
+	configFileBytes, err := ioutil.ReadAll(configFile)
+	if err != nil {
+		fmt.Printf("Unable to read config file. Error: %s\n", err.Error())
+		return nil, err
+	}
+
+	err = json.Unmarshal(configFileBytes, config)
+	if err != nil {
+		fmt.Printf("Unable to decode JSON from config file. Error: %s\n", err.Error())
+		return nil, err
+	}
+
+	return config, nil
+}
+
+func (c *Config) getDropletsCacheFileName() (string, error) {
+	return getAbsoluteFilePath(c.CacheFileName)
+}
+
+func (c *Config) getAuthToken() (string, error) {
+	token := c.Token
+	token = strings.TrimSpace(token)
+
+	if token == "" {
+		fmt.Println("Token is empty. Please update config file.")
+		return "", errors.New("Empty token in config file")
+	}
+	return token, nil
+}
+
+func getConfigParamValueWithDefault(prompt, defaultValue string) (string, error) {
 	inputReader := bufio.NewReader(os.Stdin)
 
-	fmt.Print("Token: ")
-	token, err := inputReader.ReadString('\n')
+	fmt.Printf("%s [%s]: ", prompt, defaultValue)
+	input, err := inputReader.ReadString('\n')
 	if err != nil {
 		fmt.Printf("Error while reading user input. Error: %s\n", err.Error())
-		return err
+		return "", err
 	}
 
-	token = strings.TrimSpace(token)
-	if token == "" {
-		fmt.Println("Empty token input")
-		return errors.New("Empty token input")
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return defaultValue, nil
+	} else {
+		return input, nil
 	}
+}
 
-	fmt.Printf("Cache file name [$HOME/%s]: ", DEFAULT_CACHE_FILE_NAME)
-	cacheFileName, err := inputReader.ReadString('\n')
+func createConfig() error {
+	token, err := getConfigParamValueWithDefault("Token", "")
 	if err != nil {
-		fmt.Printf("Error while reading user input. Error: %s\n", err.Error())
 		return err
 	}
 
-	cacheFileName = strings.TrimSpace(cacheFileName)
-	if cacheFileName == "" {
-		cacheFileName = DEFAULT_CACHE_FILE_NAME
-	}
-
-	fmt.Printf("Cache duration (in minutes) [%d]: ", DEFAULT_CACHE_DURATION)
-	cacheDuration, err := inputReader.ReadString('\n')
+	cacheFileName, err := getConfigParamValueWithDefault("Cache file name", DEFAULT_CACHE_FILE_NAME)
 	if err != nil {
-		fmt.Printf("Error while reading usre input. Error: %s\n", err.Error())
 		return err
 	}
 
-	cacheDuration = strings.TrimSpace(cacheDuration)
-	cacheDurationInt := DEFAULT_CACHE_DURATION
-	if cacheDuration != "" {
-		cacheDurationInt, err = strconv.Atoi(cacheDuration)
-		if err != nil {
-			fmt.Printf("Unable to conver input \"%s\" into integer. Error: %s\n", cacheDuration, err.Error())
-			return err
-		}
+	cacheDuration, err := getConfigParamValueWithDefault("Cache duration (in minutes)", strconv.Itoa(DEFAULT_CACHE_DURATION))
+	if err != nil {
+		return err
+	}
+
+	cacheDurationInt, err := strconv.Atoi(cacheDuration)
+	if err != nil {
+		fmt.Printf("Unable to conver input \"%s\" into integer. Error: %s\n", cacheDuration, err.Error())
+		return err
+	}
+
+	defaultUser, err := getConfigParamValueWithDefault("Default user (optional)", "")
+	if err != nil {
+		return err
+	}
+
+	defaultKeyFileName, err := getConfigParamValueWithDefault("Default SSH key file (optional)", "")
+	if err != nil {
+		return err
 	}
 
 	newConf := Config{
-		Token:         token,
-		CacheFileName: cacheFileName,
-		CacheDuration: cacheDurationInt,
+		Token:              token,
+		CacheFileName:      cacheFileName,
+		CacheDuration:      cacheDurationInt,
+		DefaultUser:        defaultUser,
+		DefaultKeyFileName: defaultKeyFileName,
 	}
 
 	configFilePath, err := getConfigFilePath()
@@ -131,36 +189,6 @@ func getConfigFh() (*os.File, error) {
 	return configFile, nil
 }
 
-func getConfig() (*Config, error) {
-	if config != nil {
-		return config, nil
-	}
-
-	config = new(Config)
-
-	configFile, err := getConfigFh()
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		configFile.Close()
-	}()
-
-	configFileBytes, err := ioutil.ReadAll(configFile)
-	if err != nil {
-		fmt.Printf("Unable to read config file. Error: %s\n", err.Error())
-		return nil, err
-	}
-
-	err = json.Unmarshal(configFileBytes, config)
-	if err != nil {
-		fmt.Printf("Unable to decode JSON from config file. Error: %s\n", err.Error())
-		return nil, err
-	}
-
-	return config, nil
-}
-
 func getAbsoluteFilePath(givenFilePath string) (string, error) {
 	if !path.IsAbs(givenFilePath) {
 		userInfo, err := user.Current()
@@ -172,29 +200,4 @@ func getAbsoluteFilePath(givenFilePath string) (string, error) {
 	} else {
 		return givenFilePath, nil
 	}
-}
-
-func getAuthTokenFromConfigFile() (string, error) {
-	config, err := getConfig()
-	if err != nil {
-		return "", nil
-	}
-
-	token := config.Token
-	token = strings.TrimSpace(token)
-
-	if token == "" {
-		fmt.Println("Token is empty. Please update config file.")
-		return "", errors.New("Empty token in config file")
-	}
-	return token, nil
-}
-
-func getDropletsCacheFileName() (string, error) {
-	config, err := getConfig()
-	if err != nil {
-		return "", nil
-	}
-
-	return getAbsoluteFilePath(config.CacheFileName)
 }

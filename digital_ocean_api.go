@@ -84,7 +84,12 @@ func getDroplets(authToken string) *ApiResponseDroplets {
 Get info about all the droplets from the DO API and store it in the given file as Json
 */
 func updateDropletsInfoCacheFile(filename string) error {
-	authToken, err := getAuthTokenFromConfigFile()
+	config, err := getConfig()
+	if err != nil {
+		return err
+	}
+
+	authToken, err := config.getAuthToken()
 	if err != nil {
 		return err
 	}
@@ -137,7 +142,12 @@ func getDropletsFromApi() ([]DropletInfo, error) {
 		return nil, err
 	}
 
-	fc := filecache.New(config.CacheFileName, time.Duration(config.CacheDuration)*time.Minute, updateDropletsInfoCacheFile)
+	cacheFileName, err := config.getDropletsCacheFileName()
+	if err != nil {
+		return nil, err
+	}
+
+	fc := filecache.New(cacheFileName, time.Duration(config.CacheDuration)*time.Minute, updateDropletsInfoCacheFile)
 	if forceUpdate {
 		if err = fc.Update(); err != nil {
 			fmt.Printf("Unable to update cache file. Error: %s\n", err.Error())

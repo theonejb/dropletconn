@@ -44,7 +44,18 @@ func main() {
 }
 
 func connectToDroplet() {
+	nArgs := flag.NArg()
+	if nArgs < 2 {
+		fmt.Println("No droplet name given")
+		return
+	}
+
 	inputDropletName := flag.Arg(1)
+	var extraCmdOptions []string
+	if nArgs > 2 {
+		extraCmdOptions = flag.Args()[2:]
+	}
+
 	droplets, err := getDropletsFromApi()
 
 	if err != nil {
@@ -83,8 +94,35 @@ func connectToDroplet() {
 		return
 	}
 
+	config, err := getConfig()
+	if err != nil {
+		fmt.Printf("Unable to get config. Error: %s\n", err.Error())
+		return
+	}
+
+	cmdOptions := []string{firstPublicIpAddress}
+	if config.DefaultUser != "" {
+		cmdOptions = append(cmdOptions, "-l")
+		cmdOptions = append(cmdOptions, config.DefaultUser)
+	}
+	if config.DefaultKeyFileName != "" {
+		keyFileName := config.DefaultKeyFileName
+		keyFilePath, err := getAbsoluteFilePath(keyFileName)
+		if err != nil {
+			fmt.Printf("Unable to get absolute ssh key file path. Error: %s\n", err.Error())
+			return
+		}
+
+		cmdOptions = append(cmdOptions, "-i")
+		cmdOptions = append(cmdOptions, keyFilePath)
+	}
+
+	for _, extraOpt := range extraCmdOptions {
+		cmdOptions = append(cmdOptions, extraOpt)
+	}
+
 	fmt.Printf("Connecting to \"%s\"\n", inputDropletName)
-	cmd := exec.Command("ssh", firstPublicIpAddress, "-l", "root", "-i", "/Users/asadjb/.ssh/jrd")
+	cmd := exec.Command("ssh", cmdOptions...)
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
 	cmd.Stdin = os.Stdin
@@ -116,12 +154,17 @@ func listDropletsInfo(filterExpresions []string) {
 	totalDisplayedDroplets := 0
 
 	for _, di := range dropletsInfo {
+		dropletNameLower := strings.ToLower(di.Name)
+
+		netAdd := di.getInterfaceAddresses()
+		publicIpAddressesString := strings.Join(netAdd.publicIps, ", ")
+		privateIpAddressesString := strings.Join(netAdd.privateIps, ", ")
+
 		if len(filterExpresions) > 0 {
 			filterMatched := false
-			dropletNameLower := strings.ToLower(di.Name)
 
 			for _, fe := range filterExpresions {
-				if strings.Contains(dropletNameLower, fe) {
+				if strings.Contains(dropletNameLower, fe) || strings.Contains(publicIpAddressesString, fe) || strings.Contains(privateIpAddressesString, fe) {
 					filterMatched = true
 					break
 				}
@@ -132,8 +175,7 @@ func listDropletsInfo(filterExpresions []string) {
 			}
 		}
 
-		netAdd := di.getInterfaceAddresses()
-		table.Append([]string{strconv.Itoa(di.Id), di.Name, strings.Join(netAdd.publicIps, ", "), strings.Join(netAdd.privateIps, ", ")})
+		table.Append([]string{strconv.Itoa(di.Id), di.Name, publicIpAddressesString, privateIpAddressesString})
 
 		totalDisplayedDroplets++
 	}
