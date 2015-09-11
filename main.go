@@ -11,10 +11,16 @@ import (
 	"github.com/olekukonko/tablewriter"
 )
 
+var forceUpdate bool
+
 func main() {
+	flag.BoolVar(&forceUpdate, "force-update", false, "Force update the cache file")
 	flag.Parse()
+
 	command := flag.Arg(0)
-	if flag.NArg() < 1 {
+
+	nArgs := flag.NArg()
+	if nArgs < 1 {
 		fmt.Println("Not enough arguments")
 		return
 	}
@@ -23,7 +29,11 @@ func main() {
 	case "connect":
 		connectToDroplet()
 	case "list":
-		listDropletsInfo()
+		filterExpressions := make([]string, 0)
+		if nArgs > 1 {
+			filterExpressions = flag.Args()[1:]
+		}
+		listDropletsInfo(filterExpressions)
 	default:
 	}
 }
@@ -80,7 +90,7 @@ func connectToDroplet() {
 	}
 }
 
-func listDropletsInfo() {
+func listDropletsInfo(filterExpresions []string) {
 	dropletsInfo, err := getDropletsFromApi()
 	if err != nil {
 		fmt.Printf("Unable to get droplets. Error: %s\n", err.Error())
@@ -93,10 +103,36 @@ func listDropletsInfo() {
 	table := tablewriter.NewWriter(os.Stdout)
 	table.SetHeader([]string{"Id", "Name", "Public IP", "Private IP"})
 
+	// Convert all filter expression string to lower
+	for i := range filterExpresions {
+		filterExpresions[i] = strings.ToLower(filterExpresions[i])
+	}
+
+	totalDisplayedDroplets := 0
+
 	for _, di := range dropletsInfo {
+		if len(filterExpresions) > 0 {
+			filterMatched := false
+			dropletNameLower := strings.ToLower(di.Name)
+
+			for _, fe := range filterExpresions {
+				if strings.Contains(dropletNameLower, fe) {
+					filterMatched = true
+					break
+				}
+			}
+
+			if !filterMatched {
+				continue
+			}
+		}
+
 		netAdd := di.getInterfaceAddresses()
 		table.Append([]string{strconv.Itoa(di.Id), di.Name, strings.Join(netAdd.publicIps, ", "), strings.Join(netAdd.privateIps, ", ")})
+
+		totalDisplayedDroplets++
 	}
 
 	table.Render()
+	fmt.Printf("Total droplets: %d\n", totalDisplayedDroplets)
 }

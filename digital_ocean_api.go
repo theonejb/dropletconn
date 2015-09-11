@@ -52,7 +52,7 @@ func (di *DropletInfo) getInterfaceAddresses() interfaceAddresses {
 
 func getDroplets(authToken string) *ApiResponseDroplets {
 	req := gorequest.New()
-	resp, body, errs := req.Get("https://api.digitalocean.com/v2/droplets?page=1&per_page=100").
+	resp, body, errs := req.Get("https://api.digitalocean.com/v2/droplets?page=1&per_page=1000").
 		Set("Content-Type", "application/json").
 		Set("Authorization", fmt.Sprintf("Bearer %s", authToken)).
 		EndBytes()
@@ -139,6 +139,13 @@ func getDropletsFromApi() ([]DropletInfo, error) {
 	}
 
 	fc := filecache.New(cache_file_name, 5*time.Minute, updateDropletsInfoCacheFile)
+	if forceUpdate {
+		if err = fc.Update(); err != nil {
+			fmt.Printf("Unable to update cache file. Error: %s\n", err.Error())
+			return nil, err
+		}
+	}
+
 	fh, err := fc.Get()
 	if err != nil {
 		fmt.Printf("Unable to read cache file. Error: %s\n", err.Error())
