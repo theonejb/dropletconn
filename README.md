@@ -1,11 +1,13 @@
 # dropletconn
 A simple golang base CLI app to list and connect to your DigitalOcean droplets
 
-Generate a DigitalOcean APIv2 token and paste it in ~/.dropletconn.token. Then, you can run:
- - `dropletconn list FILTER_STRING_1 .. FILTER_STRING_N`
- - `dropletconn connect EXACT_NODE_NAME`
+To use, `go get github.com/theonejb/dropletconn` and `go install github.com/theonejb/dropletconn`. `dropletconn` is the
+name of the genrated binary. Available commands:
+ - `config`: Generate config file that stores the API token and other settings. This needs to be generated before the rest of
+ the commands can be used
+ - `list`: Lists all droplets from your account. You can optionally pass a number of filter expressions. If you do, only droplets whose names contain
+ at least one of the given fitler expressions will be listed
+ - `connect <NAME>`: Connect to the droplet with the given name
 
-All strings used to match droplet names (filter string, node names) are case insensitive.
-
-`dropletconn` caches the API response from DigitalOcean for 5 minutes.  You can pass the
-`--force-update` option to force update the cache to all of the commands.
+Both `list` and `connect` accept an optional `--force-update` flag. By default, the list of droplets is cached for a configurable duration (as set in
+the config file). Passing this flag forces an update of this list before running the command.
