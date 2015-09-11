@@ -26,15 +26,20 @@ func main() {
 	}
 
 	switch command {
-	case "connect":
+	case "config":
+		if err := createConfig(); err != nil {
+			fmt.Printf("Error while creating config. Error: %s\n", err.Error())
+		}
+	case "c", "connect":
 		connectToDroplet()
-	case "list":
+	case "l", "list":
 		filterExpressions := make([]string, 0)
 		if nArgs > 1 {
 			filterExpressions = flag.Args()[1:]
 		}
 		listDropletsInfo(filterExpressions)
 	default:
+		fmt.Println("Unknown command")
 	}
 }
 

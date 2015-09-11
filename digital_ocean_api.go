@@ -132,13 +132,12 @@ func readDropletsInfoCacheFile(fh *os.File) *ApiResponseDroplets {
 }
 
 func getDropletsFromApi() ([]DropletInfo, error) {
-	cache_file_name, err := getDropletsCacheFileName()
+	config, err := getConfig()
 	if err != nil {
-		fmt.Printf("Unable to get cache file name. Error: %s\n", err.Error())
 		return nil, err
 	}
 
-	fc := filecache.New(cache_file_name, 5*time.Minute, updateDropletsInfoCacheFile)
+	fc := filecache.New(config.CacheFileName, time.Duration(config.CacheDuration)*time.Minute, updateDropletsInfoCacheFile)
 	if forceUpdate {
 		if err = fc.Update(); err != nil {
 			fmt.Printf("Unable to update cache file. Error: %s\n", err.Error())
