@@ -38,6 +38,8 @@ func main() {
 			filterExpressions = flag.Args()[1:]
 		}
 		listDropletsInfo(filterExpressions)
+	case "completion":
+		printCompletions()
 	default:
 		fmt.Println("Unknown command")
 	}
@@ -182,4 +184,27 @@ func listDropletsInfo(filterExpresions []string) {
 
 	table.Render()
 	fmt.Printf("Total droplets: %d\n", totalDisplayedDroplets)
+}
+
+func printCompletions() {
+	if flag.NArg() != 2 {
+		fmt.Println("Not enough arguments")
+		return
+	}
+
+	completionFilter := flag.Arg(1)
+	droplets, err := getDropletsFromApi()
+	if err != nil {
+		return
+	}
+
+	compFilterLower := strings.ToLower(completionFilter)
+	for _, di := range droplets {
+		dropletName := di.Name
+		dropletNameLower := strings.ToLower(dropletName)
+
+		if strings.Contains(dropletNameLower, compFilterLower) {
+			fmt.Println(dropletName)
+		}
+	}
 }

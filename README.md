@@ -11,3 +11,6 @@ name of the genrated binary. Available commands:
 
 Both `list` and `connect` accept an optional `--force-update` flag. By default, the list of droplets is cached for a configurable duration (as set in
 the config file). Passing this flag forces an update of this list before running the command.
+
+To enable completion of droplet names, source the included Zsh completion file. Credit for that script goes to James Coglan. I copied it from his blog
+(https://blog.jcoglan.com/2013/02/12/tab-completion-for-your-command-line-apps/).
