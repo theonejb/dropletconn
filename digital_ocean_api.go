@@ -136,7 +136,7 @@ func readDropletsInfoCacheFile(fh *os.File) *ApiResponseDroplets {
 	return apiResponse
 }
 
-func getDropletsFromApi() ([]DropletInfo, error) {
+func getDropletsFromApi(forceUpdate bool) ([]DropletInfo, error) {
 	config, err := getConfig()
 	if err != nil {
 		return nil, err

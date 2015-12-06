@@ -11,10 +11,19 @@ import (
 	"github.com/olekukonko/tablewriter"
 )
 
-var forceUpdate bool
+type CommandConfig struct {
+	forceUpdate   bool
+	listPublicIps bool
+
+	command string
+}
 
 func main() {
+	var forceUpdate bool
+	var listPublicIps bool
+
 	flag.BoolVar(&forceUpdate, "force-update", false, "Force update the cache file")
+	flag.BoolVar(&listPublicIps, "list-public-ip", false, "If the list command is used, only print out list of public IPs")
 	flag.Parse()
 
 	command := flag.Arg(0)
@@ -25,27 +34,29 @@ func main() {
 		return
 	}
 
+	runningConf := CommandConfig{forceUpdate, listPublicIps, command}
+
 	switch command {
 	case "config":
 		if err := createConfig(); err != nil {
 			fmt.Printf("Error while creating config. Error: %s\n", err.Error())
 		}
 	case "c", "connect":
-		connectToDroplet()
+		connectToDroplet(runningConf)
 	case "l", "list":
 		filterExpressions := make([]string, 0)
 		if nArgs > 1 {
 			filterExpressions = flag.Args()[1:]
 		}
-		listDropletsInfo(filterExpressions)
+		listDropletsInfo(filterExpressions, runningConf)
 	case "completion":
-		printCompletions()
+		printCompletions(runningConf)
 	default:
 		fmt.Println("Unknown command")
 	}
 }
 
-func connectToDroplet() {
+func connectToDroplet(runningConf CommandConfig) {
 	nArgs := flag.NArg()
 	if nArgs < 2 {
 		fmt.Println("No droplet name given")
@@ -58,7 +69,7 @@ func connectToDroplet() {
 		extraCmdOptions = flag.Args()[2:]
 	}
 
-	droplets, err := getDropletsFromApi()
+	droplets, err := getDropletsFromApi(runningConf.forceUpdate)
 
 	if err != nil {
 		fmt.Printf("Unable to get droplets. Error: %s\n", err.Error())
@@ -135,8 +146,8 @@ func connectToDroplet() {
 	}
 }
 
-func listDropletsInfo(filterExpresions []string) {
-	dropletsInfo, err := getDropletsFromApi()
+func listDropletsInfo(filterExpresions []string, runningConf CommandConfig) {
+	dropletsInfo, err := getDropletsFromApi(runningConf.forceUpdate)
 	if err != nil {
 		fmt.Printf("Unable to get droplets. Error: %s\n", err.Error())
 		return
@@ -145,16 +156,12 @@ func listDropletsInfo(filterExpresions []string) {
 		return
 	}
 
-	table := tablewriter.NewWriter(os.Stdout)
-	table.SetHeader([]string{"Id", "Name", "Public IP", "Private IP"})
-
 	// Convert all filter expression string to lower
 	for i := range filterExpresions {
 		filterExpresions[i] = strings.ToLower(filterExpresions[i])
 	}
 
-	totalDisplayedDroplets := 0
-
+	matchedDroplets := make([]DropletInfo, 0)
 	for _, di := range dropletsInfo {
 		dropletNameLower := strings.ToLower(di.Name)
 
@@ -177,23 +184,42 @@ func listDropletsInfo(filterExpresions []string) {
 			}
 		}
 
-		table.Append([]string{strconv.Itoa(di.Id), di.Name, publicIpAddressesString, privateIpAddressesString})
-
-		totalDisplayedDroplets++
+		matchedDroplets = append(matchedDroplets, di)
 	}
 
-	table.Render()
-	fmt.Printf("Total droplets: %d\n", totalDisplayedDroplets)
+	// Only list public Ips
+	if runningConf.listPublicIps {
+		for _, di := range matchedDroplets {
+			netAdd := di.getInterfaceAddresses()
+			publicIpAddressesString := strings.Join(netAdd.publicIps, ", ")
+
+			fmt.Println(publicIpAddressesString)
+		}
+	} else {
+		table := tablewriter.NewWriter(os.Stdout)
+		table.SetHeader([]string{"Id", "Name", "Public IP", "Private IP"})
+
+		for _, di := range matchedDroplets {
+			netAdd := di.getInterfaceAddresses()
+			publicIpAddressesString := strings.Join(netAdd.publicIps, ", ")
+			privateIpAddressesString := strings.Join(netAdd.privateIps, ", ")
+
+			table.Append([]string{strconv.Itoa(di.Id), di.Name, publicIpAddressesString, privateIpAddressesString})
+		}
+
+		table.Render()
+	}
+	fmt.Printf("Total droplets: %d\n", len(matchedDroplets))
 }
 
-func printCompletions() {
+func printCompletions(runningConf CommandConfig) {
 	if flag.NArg() != 2 {
 		fmt.Println("Not enough arguments")
 		return
 	}
 
 	completionFilter := flag.Arg(1)
-	droplets, err := getDropletsFromApi()
+	droplets, err := getDropletsFromApi(runningConf.forceUpdate)
 	if err != nil {
 		return
 	}
