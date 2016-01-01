@@ -1,5 +1,5 @@
 # dropletconn
-List and connect to your Digital Ocean droplets instantly (**without a .ssh/config**)
+List and connect to your Digital Ocean droplets instantly (*without a .ssh/config*)
 
 ## Quick Start
 
@@ -25,7 +25,7 @@ name of the genrated binary. I personally have it aliased to `dc` using `export 
 I use it atleast 20 times a day to connect to various servers at work.
 
 You will also need to generate a token from [Digital Ocean API Tokens](https://cloud.digitalocean.com/settings/applications)
-that `dropletconn` will use to get a list of droplets available in your account. For safety, use a *Read* only scoped token.
+that `dropletconn` will use to get a list of droplets available in your account. For safety, use a **Read** only scoped token.
 
 Available commands and their usage is described here. Both the `list` and `connect` commands have a short version as well, which is what
 you see after the OR pipe (`|`) in their help text below.
