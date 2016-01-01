@@ -1,5 +1,5 @@
 # dropletconn
-A simple golang base CLI app to list and connect to your DigitalOcean droplets.
+List and connect to your Digital Ocean droplets instantly (**without a .ssh/config**)
 
 ## Quick Start
 
