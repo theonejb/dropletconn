@@ -1,6 +1,15 @@
 # dropletconn
 A simple golang base CLI app to list and connect to your DigitalOcean droplets.
 
+## Quick Start
+
+    go get github.com/theonejb/dropletconn
+    go install github.com/theonejb/dropletconn
+    dropletconn config
+    dropletconn list
+    dropletconn connect <NAME OF DROPLET>
+
+
 ## Installing and Configuring dropletconn
 ![Install and Configure dropletconn](https://dl.dropboxusercontent.com/u/14307524/config-safe.png)
 
