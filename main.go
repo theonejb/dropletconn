@@ -11,11 +11,17 @@ import (
 	"github.com/olekukonko/tablewriter"
 )
 
-type CommandConfig struct {
-	forceUpdate   bool
+/*
+Configuration structure that holds all configration needed to run any of the commands. Sort of a wrapper on top of the various other configuration structs
+so we don't have to pass those individually to each command function
+*/
+type runningConf struct {
 	listPublicIps bool
+	command       string
 
-	command string
+	conf *Config
+
+	api *digitalOceanAPI
 }
 
 func main() {
@@ -26,8 +32,6 @@ func main() {
 	flag.BoolVar(&listPublicIps, "list-public-ip", false, "If the list command is used, only print out list of public IPs")
 	flag.Parse()
 
-	command := flag.Arg(0)
-
 	nArgs := flag.NArg()
 	if nArgs < 1 {
 		fmt.Println("Not enough arguments")
@@ -35,13 +39,39 @@ func main() {
 		return
 	}
 
-	runningConf := CommandConfig{forceUpdate, listPublicIps, command}
+	command := flag.Arg(0)
 
-	switch command {
-	case "config":
+	// We treat the config command differently because it is the only command that doesn't use the API
+	if command == "config" {
 		if err := createConfig(); err != nil {
 			fmt.Printf("Error while creating config. Error: %s\n", err.Error())
 		}
+
+		return
+	}
+
+	userConf, err := getConfig()
+	if err != nil {
+		fmt.Printf("Unable to read configuration. Error: %s\n", err.Error())
+		return
+	}
+
+	api, err := newApiFromConfig(userConf)
+	if err != nil {
+		fmt.Printf("Error while creating API connector. Error: %s\n", err.Error())
+		return
+	}
+
+	if forceUpdate {
+		if err = api.forceUpdateCache(); err != nil {
+			fmt.Printf("Error trying to force update cache. Error: %s\n", err.Error())
+			return
+		}
+	}
+
+	runningConf := runningConf{listPublicIps, command, userConf, api}
+
+	switch command {
 	case "c", "connect":
 		connectToDroplet(runningConf)
 	case "l", "list":
@@ -49,7 +79,7 @@ func main() {
 		if nArgs > 1 {
 			filterExpressions = flag.Args()[1:]
 		}
-		listDropletsInfo(filterExpressions, runningConf)
+		listDropletsInfo(runningConf, filterExpressions)
 	case "r", "run":
 		var filterExpression, cmd string
 
@@ -60,7 +90,7 @@ func main() {
 
 		filterExpression = flag.Arg(1)
 		cmd = flag.Arg(2)
-		runCommandOnDroplets(filterExpression, cmd, runningConf)
+		runCommandOnDroplets(runningConf, filterExpression, cmd)
 	case "completion":
 		printCompletions(runningConf)
 	default:
@@ -82,7 +112,7 @@ func printUsage() {
 			Run the given command on all matched droplets one by one`)
 }
 
-func connectToDroplet(runningConf CommandConfig) {
+func connectToDroplet(rConf runningConf) {
 	nArgs := flag.NArg()
 	if nArgs < 2 {
 		fmt.Println("No droplet name given")
@@ -95,7 +125,7 @@ func connectToDroplet(runningConf CommandConfig) {
 		extraCmdOptions = flag.Args()[2:]
 	}
 
-	droplets, err := getDropletsFromApi(runningConf.forceUpdate)
+	droplets, err := rConf.api.getDroplets()
 
 	if err != nil {
 		fmt.Printf("Unable to get droplets. Error: %s\n", err.Error())
@@ -133,19 +163,13 @@ func connectToDroplet(runningConf CommandConfig) {
 		return
 	}
 
-	config, err := getConfig()
-	if err != nil {
-		fmt.Printf("Unable to get config. Error: %s\n", err.Error())
-		return
-	}
-
 	cmdOptions := []string{firstPublicIpAddress}
 	if config.DefaultUser != "" {
 		cmdOptions = append(cmdOptions, "-l")
-		cmdOptions = append(cmdOptions, config.DefaultUser)
+		cmdOptions = append(cmdOptions, rConf.conf.DefaultUser)
 	}
-	if config.DefaultKeyFileName != "" {
-		keyFileName := config.DefaultKeyFileName
+	if rConf.conf.DefaultKeyFileName != "" {
+		keyFileName := rConf.conf.DefaultKeyFileName
 		keyFilePath, err := getAbsoluteFilePath(keyFileName)
 		if err != nil {
 			fmt.Printf("Unable to get absolute ssh key file path. Error: %s\n", err.Error())
@@ -172,11 +196,11 @@ func connectToDroplet(runningConf CommandConfig) {
 	}
 }
 
-func listDropletsInfo(filterExpresions []string, runningConf CommandConfig) {
-	droplets := getFilteredDroplets(filterExpresions, runningConf)
+func listDropletsInfo(rConf runningConf, filterExpresions []string) {
+	droplets := rConf.api.getFilteredDroplets(rConf, filterExpresions)
 
 	// Only list public Ips
-	if runningConf.listPublicIps {
+	if rConf.listPublicIps {
 		for _, di := range droplets {
 			netAdd := di.getInterfaceAddresses()
 			publicIpAddressesString := strings.Join(netAdd.publicIps, ", ")
@@ -200,8 +224,8 @@ func listDropletsInfo(filterExpresions []string, runningConf CommandConfig) {
 	fmt.Printf("Total droplets: %d\n", len(droplets))
 }
 
-func runCommandOnDroplets(filterExpression string, command string, runningConf CommandConfig) {
-	droplets := getFilteredDroplets([]string{filterExpression}, runningConf)
+func runCommandOnDroplets(rConf runningConf, filterExpression string, command string) {
+	droplets := rConf.api.getFilteredDroplets(rConf, []string{filterExpression})
 
 	fmt.Printf("'%s' will be run on:\n", command)
 	for _, di := range droplets {
@@ -209,14 +233,14 @@ func runCommandOnDroplets(filterExpression string, command string, runningConf C
 	}
 }
 
-func printCompletions(runningConf CommandConfig) {
+func printCompletions(rConf runningConf) {
 	if flag.NArg() != 2 {
 		fmt.Println("Not enough arguments")
 		return
 	}
 
 	completionFilter := flag.Arg(1)
-	droplets, err := getDropletsFromApi(runningConf.forceUpdate)
+	droplets, err := rConf.api.getDroplets()
 	if err != nil {
 		return
 	}

@@ -4,13 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/parnurzeal/gorequest"
-	"github.com/ryanuber/go-filecache"
 	"io/ioutil"
 	"net/http"
 	"os"
 	"strings"
-	"time"
+
+	"github.com/parnurzeal/gorequest"
 )
 
 type InterfaceInfo struct {
@@ -52,6 +51,10 @@ func (di *DropletInfo) getInterfaceAddresses() interfaceAddresses {
 }
 
 func (di *DropletInfo) matchesFilterExpressions(filterExpressions []string) bool {
+	if len(filterExpressions) == 0 {
+		return true
+	}
+
 	dropletNameLower := strings.ToLower(di.Name)
 
 	netAdd := di.getInterfaceAddresses()
@@ -151,33 +154,4 @@ func readDropletsInfoCacheFile(fh *os.File) *ApiResponseDroplets {
 	}
 
 	return apiResponse
-}
-
-func getDropletsFromApi(forceUpdate bool) ([]DropletInfo, error) {
-	config, err := getConfig()
-	if err != nil {
-		return nil, err
-	}
-
-	cacheFileName, err := config.getDropletsCacheFileName()
-	if err != nil {
-		return nil, err
-	}
-
-	fc := filecache.New(cacheFileName, time.Duration(config.CacheDuration)*time.Minute, updateDropletsInfoCacheFile)
-	if forceUpdate {
-		if err = fc.Update(); err != nil {
-			fmt.Printf("Unable to update cache file. Error: %s\n", err.Error())
-			return nil, err
-		}
-	}
-
-	fh, err := fc.Get()
-	if err != nil {
-		fmt.Printf("Unable to read cache file. Error: %s\n", err.Error())
-		return nil, err
-	}
-
-	dropletsInfo := readDropletsInfoCacheFile(fh)
-	return dropletsInfo.Droplets, nil
 }
