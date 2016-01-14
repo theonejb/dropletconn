@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -48,6 +49,22 @@ func (di *DropletInfo) getInterfaceAddresses() interfaceAddresses {
 	}
 
 	return ia
+}
+
+func (di *DropletInfo) matchesFilterExpressions(filterExpressions []string) bool {
+	dropletNameLower := strings.ToLower(di.Name)
+
+	netAdd := di.getInterfaceAddresses()
+	publicIpAddressesString := strings.Join(netAdd.publicIps, ", ")
+	privateIpAddressesString := strings.Join(netAdd.privateIps, ", ")
+
+	for _, fe := range filterExpressions {
+		if strings.Contains(dropletNameLower, fe) || strings.Contains(publicIpAddressesString, fe) || strings.Contains(privateIpAddressesString, fe) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func getDroplets(authToken string) *ApiResponseDroplets {

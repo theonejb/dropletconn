@@ -31,6 +31,7 @@ func main() {
 	nArgs := flag.NArg()
 	if nArgs < 1 {
 		fmt.Println("Not enough arguments")
+		printUsage()
 		return
 	}
 
@@ -49,11 +50,36 @@ func main() {
 			filterExpressions = flag.Args()[1:]
 		}
 		listDropletsInfo(filterExpressions, runningConf)
+	case "r", "run":
+		var filterExpression, cmd string
+
+		if nArgs != 3 {
+			fmt.Println("Not enough arguments for the run command")
+			break
+		}
+
+		filterExpression = flag.Arg(1)
+		cmd = flag.Arg(2)
+		runCommandOnDroplets(filterExpression, cmd, runningConf)
 	case "completion":
 		printCompletions(runningConf)
 	default:
 		fmt.Println("Unknown command")
 	}
+}
+
+func printUsage() {
+	fmt.Print(`Usage:
+	dropletconn <COMMAND> <ARGS>.
+	Available commands:
+		- config
+			Create a new configuration file by prompting for configuration options
+		- connect/c <DROPLET NAME>
+			Connect to the named droplet
+		- list/l [FILTER EXPRESSION]...
+			List all droplets that match ANY of the given filter expressions. Matching means that the filter expression is a substring of the droplet name
+		- run/r <FILTER EXPRESSION> CMD
+			Run the given command on all matched droplets one by one`)
 }
 
 func connectToDroplet(runningConf CommandConfig) {
@@ -147,49 +173,11 @@ func connectToDroplet(runningConf CommandConfig) {
 }
 
 func listDropletsInfo(filterExpresions []string, runningConf CommandConfig) {
-	dropletsInfo, err := getDropletsFromApi(runningConf.forceUpdate)
-	if err != nil {
-		fmt.Printf("Unable to get droplets. Error: %s\n", err.Error())
-		return
-	} else if len(dropletsInfo) == 0 {
-		fmt.Println("No droplets found in account")
-		return
-	}
-
-	// Convert all filter expression string to lower
-	for i := range filterExpresions {
-		filterExpresions[i] = strings.ToLower(filterExpresions[i])
-	}
-
-	matchedDroplets := make([]DropletInfo, 0)
-	for _, di := range dropletsInfo {
-		dropletNameLower := strings.ToLower(di.Name)
-
-		netAdd := di.getInterfaceAddresses()
-		publicIpAddressesString := strings.Join(netAdd.publicIps, ", ")
-		privateIpAddressesString := strings.Join(netAdd.privateIps, ", ")
-
-		if len(filterExpresions) > 0 {
-			filterMatched := false
-
-			for _, fe := range filterExpresions {
-				if strings.Contains(dropletNameLower, fe) || strings.Contains(publicIpAddressesString, fe) || strings.Contains(privateIpAddressesString, fe) {
-					filterMatched = true
-					break
-				}
-			}
-
-			if !filterMatched {
-				continue
-			}
-		}
-
-		matchedDroplets = append(matchedDroplets, di)
-	}
+	droplets := getFilteredDroplets(filterExpresions, runningConf)
 
 	// Only list public Ips
 	if runningConf.listPublicIps {
-		for _, di := range matchedDroplets {
+		for _, di := range droplets {
 			netAdd := di.getInterfaceAddresses()
 			publicIpAddressesString := strings.Join(netAdd.publicIps, ", ")
 
@@ -199,7 +187,7 @@ func listDropletsInfo(filterExpresions []string, runningConf CommandConfig) {
 		table := tablewriter.NewWriter(os.Stdout)
 		table.SetHeader([]string{"Id", "Name", "Public IP", "Private IP"})
 
-		for _, di := range matchedDroplets {
+		for _, di := range droplets {
 			netAdd := di.getInterfaceAddresses()
 			publicIpAddressesString := strings.Join(netAdd.publicIps, ", ")
 			privateIpAddressesString := strings.Join(netAdd.privateIps, ", ")
@@ -209,7 +197,16 @@ func listDropletsInfo(filterExpresions []string, runningConf CommandConfig) {
 
 		table.Render()
 	}
-	fmt.Printf("Total droplets: %d\n", len(matchedDroplets))
+	fmt.Printf("Total droplets: %d\n", len(droplets))
+}
+
+func runCommandOnDroplets(filterExpression string, command string, runningConf CommandConfig) {
+	droplets := getFilteredDroplets([]string{filterExpression}, runningConf)
+
+	fmt.Printf("'%s' will be run on:\n", command)
+	for _, di := range droplets {
+		fmt.Println(di.Name)
+	}
 }
 
 func printCompletions(runningConf CommandConfig) {
