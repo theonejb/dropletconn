@@ -61,13 +61,7 @@ func main() {
 		fmt.Printf("Error while creating API connector. Error: %s\n", err.Error())
 		return
 	}
-
-	if forceUpdate {
-		if err = api.forceUpdateCache(); err != nil {
-			fmt.Printf("Error trying to force update cache. Error: %s\n", err.Error())
-			return
-		}
-	}
+	api.loadDroplets(forceUpdate)
 
 	runningConf := runningConf{listPublicIps, command, userConf, api}
 
@@ -119,85 +113,36 @@ func connectToDroplet(rConf runningConf) {
 		return
 	}
 
-	inputDropletName := flag.Arg(1)
+	dropletName := flag.Arg(1)
 	var extraCmdOptions []string
 	if nArgs > 2 {
 		extraCmdOptions = flag.Args()[2:]
 	}
 
-	droplets, err := rConf.api.getDroplets()
-
-	if err != nil {
-		fmt.Printf("Unable to get droplets. Error: %s\n", err.Error())
-		return
-	} else if len(droplets) == 0 {
-		fmt.Println("No droplets found in account")
+	droplet := rConf.api.getDropletByName(dropletName)
+	if droplet == nil {
+		fmt.Println("No droplet with maching name found")
 		return
 	}
 
-	var matchedDropletInfo *DropletInfo
-	inputDropletNameLower := strings.ToLower(inputDropletName)
-	for _, dropletInfo := range droplets {
-		dropletNameLower := strings.ToLower(dropletInfo.Name)
-		if inputDropletNameLower == dropletNameLower {
-			matchedDropletInfo = &dropletInfo
-			break
-		}
-	}
-
-	if matchedDropletInfo == nil {
-		fmt.Printf("No match found for \"%s\"\n", inputDropletName)
+	cmdOptions := droplet.getArgsForSsh(rConf.conf)
+	if cmdOptions == nil {
+		fmt.Println("Unable to create SSH connection")
 		return
-	}
-
-	firstPublicIpAddress := ""
-	for _, interfaceInfo := range matchedDropletInfo.Networks.V4 {
-		if interfaceInfo.Type == "public" {
-			firstPublicIpAddress = interfaceInfo.IpAddress
-			break
-		}
-
-	}
-	if firstPublicIpAddress == "" {
-		fmt.Printf("No public IP address found for droplet \"%s\"\n", matchedDropletInfo.Name)
-		return
-	}
-
-	cmdOptions := []string{firstPublicIpAddress}
-	if config.DefaultUser != "" {
-		cmdOptions = append(cmdOptions, "-l")
-		cmdOptions = append(cmdOptions, rConf.conf.DefaultUser)
-	}
-	if rConf.conf.DefaultKeyFileName != "" {
-		keyFileName := rConf.conf.DefaultKeyFileName
-		keyFilePath, err := getAbsoluteFilePath(keyFileName)
-		if err != nil {
-			fmt.Printf("Unable to get absolute ssh key file path. Error: %s\n", err.Error())
-			return
-		}
-
-		cmdOptions = append(cmdOptions, "-i")
-		cmdOptions = append(cmdOptions, keyFilePath)
 	}
 
 	for _, extraOpt := range extraCmdOptions {
 		cmdOptions = append(cmdOptions, extraOpt)
 	}
 
-	fmt.Printf("Connecting to \"%s\"\n", inputDropletName)
-	cmd := exec.Command("ssh", cmdOptions...)
-	cmd.Stderr = os.Stderr
-	cmd.Stdout = os.Stdout
-	cmd.Stdin = os.Stdin
-
-	err = cmd.Run()
-	if err != nil {
+	fmt.Printf("Connecting to \"%s\"\n", dropletName)
+	if err := runSsh(cmdOptions); err != nil {
 		fmt.Printf("Error while trying to run ssh. Error: %s\n", err.Error())
 	}
 }
 
 func listDropletsInfo(rConf runningConf, filterExpresions []string) {
-	droplets := rConf.api.getFilteredDroplets(rConf, filterExpresions)
+	droplets := rConf.api.getFilteredDroplets(filterExpresions)
 
 	// Only list public Ips
 	if rConf.listPublicIps {
@@ -225,11 +170,37 @@ func listDropletsInfo(rConf runningConf, filterExpresions []string) {
 }
 
 func runCommandOnDroplets(rConf runningConf, filterExpression string, command string) {
-	droplets := rConf.api.getFilteredDroplets(rConf, []string{filterExpression})
+	droplets := rConf.api.getFilteredDroplets([]string{filterExpression})
 
 	fmt.Printf("'%s' will be run on:\n", command)
 	for _, di := range droplets {
-		fmt.Println(di.Name)
+		fmt.Printf(" - %s\n", di.Name)
+	}
+
+	fmt.Println("Enter 'Y' to continue: ")
+	var confirmation string
+	if n, err := fmt.Scanln(&confirmation); err != nil || n != 1 {
+		fmt.Printf("Error while trying to get confirmation from user. Error: %s\n", err.Error())
+		return
+	}
+
+	if len(confirmation) != 1 {
+		fmt.Println("Only 1 character answers are accepted. Cancelling operation")
+		return
+	}
+	if confirmation[0] != 'Y' && confirmation[0] != 'y' {
+		fmt.Println("Cancelling operation")
+		return
+	}
+
+	for _, droplet := range droplets {
+		fmt.Printf("********** %s **********\n", droplet.Name)
+		sshArgs := droplet.getArgsForSsh(rConf.conf)
+		sshArgs = append(sshArgs, command)
+		if err := runSsh(sshArgs); err != nil {
+			fmt.Printf("Error running ssh command: Error: %s\n", err.Error())
+		}
+		fmt.Println("***********************")
 	}
 }
 
@@ -254,4 +225,13 @@ func printCompletions(rConf runningConf) {
 			fmt.Println(dropletName)
 		}
 	}
+}
+
+func runSsh(args []string) error {
+	cmd := exec.Command("ssh", args...)
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stdout
+	cmd.Stdin = os.Stdin
+
+	return cmd.Run()
 }

@@ -27,15 +27,16 @@ I use it atleast 20 times a day to connect to various servers at work.
 You will also need to generate a token from [Digital Ocean API Tokens](https://cloud.digitalocean.com/settings/applications)
 that `dropletconn` will use to get a list of droplets available in your account. For safety, use a **Read** only scoped token.
 
-Available commands and their usage is described here. Both the `list` and `connect` commands have a short version as well, which is what
-you see after the OR pipe (`|`) in their help text below.
+Available commands and their usage is described here. Some commands have a short version as well, which is what you see after the OR pipe (`|`) in their help text below.
  - `config`: Generate config file that stores the API token and other settings. This needs to be generated before the rest of
  the commands can be used
- - `list <FILTER EXPRESSION> | l <FILTER EXPRESSION>`: Lists all droplets from your account. You can optionally pass a number of filter expressions.
+ - `list | l [<FILTER EXPRESSION>]..`: Lists all droplets from your account. You can optionally pass a number of filter expressions.
  If you do, only droplets whose names or IPs contain at least one of the given fitler expressions will be listed
- - `connect NAME | c NAME`: Connect to the droplet with the given name
+ - `connect | c NAME`: Connect to the droplet with the given name
+ - `run | r <FILTER EXPRESSION> <COMMAND>`: Runs the given command on all droplets matching the filter expression. The filter expression is required, and only one filter
+ expression can be given
 
-Both `list` and `connect` accept an optional `--force-update` flag. By default, the list of droplets is cached for a configurable duration (as set in
+You can pass an optional `--force-update` flag. By default, the list of droplets is cached for a configurable duration (as set in
 the config file). Passing this flag forces an update of this list before running the command.
 
 The `list` command also accepts an options `--list-public-ip` flag. If this flag is used *only* the public IP of the nodes is printed, nothing else.

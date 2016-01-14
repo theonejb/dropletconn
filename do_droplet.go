@@ -1,15 +1,8 @@
 package main
 
 import (
-	"encoding/json"
-	"errors"
 	"fmt"
-	"io/ioutil"
-	"net/http"
-	"os"
 	"strings"
-
-	"github.com/parnurzeal/gorequest"
 )
 
 type InterfaceInfo struct {
@@ -21,14 +14,14 @@ type NetworkInfo struct {
 	V4 []InterfaceInfo `json:"v4"`
 }
 
-type DropletInfo struct {
+type Droplet struct {
 	Id       int         `json:"id"`
 	Name     string      `json:"name"`
 	Networks NetworkInfo `json:"networks"`
 }
 
-type ApiResponseDroplets struct {
-	Droplets []DropletInfo `json:"droplets"`
+type digitalOceanApiResponse struct {
+	Droplets []Droplet `json:"droplets"`
 }
 
 type interfaceAddresses struct {
@@ -36,10 +29,10 @@ type interfaceAddresses struct {
 	privateIps []string
 }
 
-func (di *DropletInfo) getInterfaceAddresses() interfaceAddresses {
+func (droplet *Droplet) getInterfaceAddresses() interfaceAddresses {
 	var ia interfaceAddresses
 
-	for _, interfaceInfo := range di.Networks.V4 {
+	for _, interfaceInfo := range droplet.Networks.V4 {
 		if interfaceInfo.Type == "public" {
 			ia.publicIps = append(ia.publicIps, interfaceInfo.IpAddress)
 		} else if interfaceInfo.Type == "private" {
@@ -50,14 +43,14 @@ func (di *DropletInfo) getInterfaceAddresses() interfaceAddresses {
 	return ia
 }
 
-func (di *DropletInfo) matchesFilterExpressions(filterExpressions []string) bool {
+func (droplet *Droplet) matchesFilterExpressions(filterExpressions []string) bool {
 	if len(filterExpressions) == 0 {
 		return true
 	}
 
-	dropletNameLower := strings.ToLower(di.Name)
+	dropletNameLower := strings.ToLower(droplet.Name)
 
-	netAdd := di.getInterfaceAddresses()
+	netAdd := droplet.getInterfaceAddresses()
 	publicIpAddressesString := strings.Join(netAdd.publicIps, ", ")
 	privateIpAddressesString := strings.Join(netAdd.privateIps, ", ")
 
@@ -70,88 +63,31 @@ func (di *DropletInfo) matchesFilterExpressions(filterExpressions []string) bool
 	return false
 }
 
-func getDroplets(authToken string) *ApiResponseDroplets {
-	req := gorequest.New()
-	resp, body, errs := req.Get("https://api.digitalocean.com/v2/droplets?page=1&per_page=1000").
-		Set("Content-Type", "application/json").
-		Set("Authorization", fmt.Sprintf("Bearer %s", authToken)).
-		EndBytes()
+func (droplet *Droplet) getArgsForSsh(userConf *Config) []string {
+	interfaceAddresses := droplet.getInterfaceAddresses()
+	if len(interfaceAddresses.publicIps) == 0 {
+		fmt.Printf("No public IP address found for droplet \"%s\"\n", droplet.Name)
+		return nil
+	}
 
-	if len(errs) != 0 {
-		fmt.Println("Encountered errors while trying to get a list of droplets")
-		for _, err := range errs {
-			fmt.Println(err.Error())
+	cmdOptions := make([]string, 0, 5)
+	cmdOptions = append(cmdOptions, interfaceAddresses.publicIps[0])
+
+	if userConf.DefaultUser != "" {
+		cmdOptions = append(cmdOptions, "-l")
+		cmdOptions = append(cmdOptions, userConf.DefaultUser)
+	}
+	if userConf.DefaultKeyFileName != "" {
+		keyFileName := userConf.DefaultKeyFileName
+		keyFilePath, err := getAbsoluteFilePath(keyFileName)
+		if err != nil {
+			fmt.Printf("Unable to get absolute ssh key file path. Error: %s\n", err.Error())
+			return nil
 		}
 
-		return nil
+		cmdOptions = append(cmdOptions, "-i")
+		cmdOptions = append(cmdOptions, keyFilePath)
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		fmt.Printf("Expected 200, got %d as response status\n", resp.StatusCode)
-		return nil
-	}
-
-	apiResponse := &ApiResponseDroplets{}
-	if err := json.Unmarshal(body, &apiResponse); err != nil {
-		fmt.Printf("Unable to decode json. Error: %s\n", err.Error())
-		return nil
-	}
-
-	return apiResponse
-}
-
-/*
-Get info about all the droplets from the DO API and store it in the given file as Json
-*/
-func updateDropletsInfoCacheFile(filename string) error {
-	config, err := getConfig()
-	if err != nil {
-		return err
-	}
-
-	authToken, err := config.getAuthToken()
-	if err != nil {
-		return err
-	}
-
-	var droplets *ApiResponseDroplets = getDroplets(authToken)
-	if droplets == nil {
-		return errors.New("Unable to get droplets")
-	}
-
-	jsonStr, err := json.MarshalIndent(droplets, "", "  ")
-	if err != nil {
-		fmt.Printf("Unable to convert DO Api response to JSON for caching. Error: %s\n", err.Error())
-		return err
-	}
-
-	cacheFile, err := os.Create(filename)
-	if err != nil {
-		fmt.Printf("Unable to create cache file. Error: %s\n", err.Error())
-		return err
-	}
-
-	_, err = cacheFile.Write(jsonStr)
-	if err != nil {
-		fmt.Printf("Error while writing cache file. Error: %s\n", err.Error())
-		return err
-	}
-
-	return nil
-}
-
-func readDropletsInfoCacheFile(fh *os.File) *ApiResponseDroplets {
-	fileBody, err := ioutil.ReadAll(fh)
-	if err != nil {
-		fmt.Printf("Unable to read from cache file. Error: %s\n", err.Error())
-		return nil
-	}
-
-	apiResponse := &ApiResponseDroplets{}
-	if err := json.Unmarshal(fileBody, &apiResponse); err != nil {
-		fmt.Printf("Unable to decode json. Error: %s\n", err.Error())
-		return nil
-	}
-
-	return apiResponse
+	return cmdOptions
 }
