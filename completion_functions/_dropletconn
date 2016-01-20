@@ -1,5 +1,5 @@
 #compdef dropletconn
 
 kwargs=("--force-update: Update the list of droplets using the API, even if the cache hasn't expired yet")
-commands=("list,l: List all droplets." "connect,c: Connect to the named droplet")
+commands=("list,l: List all droplets" "connect,c: Connect to the named droplet" "run,l: Run a command on matching droplets")
 compdef '_describe "options" kwargs -- "commands" commands' dropletconn
