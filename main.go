@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/fatih/color"
 	"github.com/olekukonko/tablewriter"
 )
 
@@ -85,6 +86,8 @@ func main() {
 		filterExpression = flag.Arg(1)
 		cmd = flag.Arg(2)
 		runCommandOnDroplets(runningConf, filterExpression, cmd)
+	case "t", "test":
+		testSshConnectionToDroplets(runningConf)
 	case "completion":
 		printCompletions(runningConf)
 	default:
@@ -202,6 +205,50 @@ func runCommandOnDroplets(rConf runningConf, filterExpression string, command st
 		}
 		fmt.Println("***********************")
 	}
+}
+
+func testSshConnectionToDroplets(rConf runningConf) {
+	droplets, err := rConf.api.getDroplets()
+	if err != nil {
+		return
+	}
+
+	dropletStatus := make([]bool, len(droplets))
+
+	for i, droplet := range droplets {
+		fmt.Printf("Running test on %s\n", droplet.Name)
+
+		sshArgs := droplet.getArgsForSsh(rConf.conf)
+		sshArgs = append(sshArgs, "-o", "StrictHostKeyChecking=no", "uptime")
+
+		if err := exec.Command("ssh", sshArgs...).Run(); err != nil {
+			dropletStatus[i] = false
+		} else {
+			dropletStatus[i] = true
+		}
+	}
+
+	table := tablewriter.NewWriter(os.Stdout)
+	table.SetHeader([]string{"Status", "Id", "Name", "Public IP", "Private IP"})
+
+	errorPrintFunc := color.New(color.FgRed).SprintFunc()
+
+	for i, droplet := range droplets {
+		var status string
+		if dropletStatus[i] {
+			status = "\u2713"
+		} else {
+			status = errorPrintFunc("\u2717")
+		}
+
+		netAdd := droplet.getInterfaceAddresses()
+		publicIpAddressesString := strings.Join(netAdd.publicIps, ", ")
+		privateIpAddressesString := strings.Join(netAdd.privateIps, ", ")
+
+		table.Append([]string{status, strconv.Itoa(droplet.Id), droplet.Name, publicIpAddressesString, privateIpAddressesString})
+	}
+
+	table.Render()
 }
 
 func printCompletions(rConf runningConf) {
