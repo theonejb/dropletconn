@@ -17,8 +17,9 @@ Configuration structure that holds all configration needed to run any of the com
 so we don't have to pass those individually to each command function
 */
 type runningConf struct {
-	listPublicIps bool
-	command       string
+	listPublicIps  bool
+	listPrivateIps bool
+	command        string
 
 	conf *Config
 
@@ -28,9 +29,11 @@ type runningConf struct {
 func main() {
 	var forceUpdate bool
 	var listPublicIps bool
+	var listPrivateIps bool
 
-	flag.BoolVar(&forceUpdate, "force-update", false, "Force update the cache file")
-	flag.BoolVar(&listPublicIps, "list-public-ip", false, "If the list command is used, only print out list of public IPs")
+	flag.BoolVar(&forceUpdate, "refresh", false, "Force update the cache file")
+	flag.BoolVar(&listPublicIps, "public-ip", false, "If the list command is used, only print out list of public IPs")
+	flag.BoolVar(&listPrivateIps, "private-ip", false, "If the list command is used, only print out list of private IPs")
 	flag.Parse()
 
 	nArgs := flag.NArg()
@@ -64,7 +67,7 @@ func main() {
 	}
 	api.loadDroplets(forceUpdate)
 
-	runningConf := runningConf{listPublicIps, command, userConf, api}
+	runningConf := runningConf{listPublicIps, listPrivateIps, command, userConf, api}
 
 	switch command {
 	case "c", "connect":
@@ -154,6 +157,13 @@ func listDropletsInfo(rConf runningConf, filterExpresions []string) {
 			publicIpAddressesString := strings.Join(netAdd.publicIps, ", ")
 
 			fmt.Println(publicIpAddressesString)
+		}
+	} else if rConf.listPrivateIps {
+		for _, di := range droplets {
+			netAdd := di.getInterfaceAddresses()
+			privateIpAddrressesString := strings.Join(netAdd.privateIps, ", ")
+
+			fmt.Println(privateIpAddrressesString)
 		}
 	} else {
 		table := tablewriter.NewWriter(os.Stdout)
